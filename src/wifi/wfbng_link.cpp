@@ -760,9 +760,25 @@ void WfbngLink::handle_80211_frame(const Packet &packet) {
         link_score_[1] = quality.link_score[1];
         packets_lost_ = quality.lost_last_second;
     }
-    // MAVLink frame
+      // MAVLink frame
+    // [DRONE AI] Giai ma MAVLink va chuyen ra UDP 127.0.0.1:14550 (cho app Drone AI / Mission Planner)
     else if (frame.MatchesChannelID(mavlink_channel_id_be8)) {
-        // GuiInterface::Instance().PutLog(LogLevel::Warn, "Received a MAVLink frame, but we're unable to handle it!");
+        static std::unique_ptr<AggregatorUDPv4> mavlink_aggregator;
+        if (!mavlink_aggregator) {
+            mavlink_aggregator = std::make_unique<AggregatorUDPv4>(
+                client_addr, mavlink_client_port, keyPath, epoch, mavlink_channel_id_f, 0);
+            GuiInterface::Instance().PutLog(LogLevel::Info, "MAVLink -> UDP 127.0.0.1:{}", mavlink_client_port);
+        }
+        mavlink_aggregator->process_packet(packet.Data.data() + sizeof(ieee80211_header),
+                                           packet.Data.size() - sizeof(ieee80211_header) - 4,
+                                           0,
+                                           antenna,
+                                           rssi,
+                                           noise,
+                                           freq,
+                                           0,
+                                           0,
+                                           NULL);
     }
     // UDP frame
     else if (frame.MatchesChannelID(udp_channel_id_be8)) {
