@@ -1,10 +1,13 @@
-name: Build Aviateur Windows (MAVLink 14550)
+name: Build Aviateur Windows + Mac (MAVLink 14550)
 
 on:
   push:
   workflow_dispatch:
 
 jobs:
+  # ---------------------------------------------------------------
+  # WINDOWS
+  # ---------------------------------------------------------------
   build-windows:
     runs-on: windows-2025
 
@@ -48,3 +51,49 @@ jobs:
         with:
           name: Aviateur_MAVLink_windows
           path: package
+
+  # ---------------------------------------------------------------
+  # MAC (chip Apple M1/M2/M3/M4)
+  # ---------------------------------------------------------------
+  build-macos:
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tai cac thu vien con (submodules)
+        run: |
+          git submodule update --init --recursive -- 3rd/json 3rd/mINI 3rd/SDL 3rd/vecgui
+          git submodule update --init -- 3rd/devourer
+
+      - name: Cai thu vien bang Homebrew
+        run: brew install pkgconf libusb ffmpeg libsodium libpcap cmake sdl3 dylibbundler
+
+      - name: Cau hinh
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3 -S .
+
+      - name: Build
+        run: cmake --build build --config Release -j"$(sysctl -n hw.ncpu)"
+
+      - name: Dong goi aviateur.app (kem day du thu vien)
+        run: |
+          APP=$(find build -name "aviateur.app" -type d -maxdepth 4 | head -1)
+          if [ -z "$APP" ]; then echo "Khong thay aviateur.app"; exit 1; fi
+          mkdir -p package
+          cp -R "$APP" package/
+          APP=package/aviateur.app
+          ls -la "$APP/Contents/MacOS" "$APP/Contents/Resources" || true
+          mkdir -p "$APP/Contents/Frameworks"
+          dylibbundler -od -b -of \
+            -x "$APP/Contents/MacOS/aviateur" \
+            -d "$APP/Contents/Frameworks" \
+            -p @executable_path/../Frameworks/ \
+            -s /opt/homebrew/lib
+          codesign --force --deep -s - "$APP"
+          otool -L "$APP/Contents/MacOS/aviateur"
+          cd package && ditto -c -k --keepParent aviateur.app Aviateur_MAVLink_macos.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Aviateur_MAVLink_macos
+          path: package/Aviateur_MAVLink_macos.zip
