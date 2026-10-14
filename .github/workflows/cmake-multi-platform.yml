@@ -9,6 +9,8 @@ jobs:
   # WINDOWS
   # ---------------------------------------------------------------
   build-windows:
+    # Ban Windows da build xong -> chi chay lai khi bam "Run workflow" bang tay
+    if: github.event_name == 'workflow_dispatch'
     runs-on: windows-2025
 
     steps:
@@ -67,10 +69,53 @@ jobs:
           git submodule update --init -- 3rd/devourer
 
       - name: Cai thu vien bang Homebrew
-        run: brew install pkgconf libusb ffmpeg libsodium libpcap cmake sdl3 dylibbundler
+        run: |
+          brew install libusb ffmpeg libsodium libpcap sdl3 dylibbundler || true
+          brew install pkgconf || true
+          cmake --version
+
+      - name: Tao file Info.plist va icon cho app Mac (repo thieu)
+        run: |
+          if [ ! -f assets/Info.plist.in ]; then
+          cat > assets/Info.plist.in <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleDevelopmentRegion</key><string>English</string>
+            <key>CFBundleExecutable</key><string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
+            <key>CFBundleIconFile</key><string>${MACOSX_BUNDLE_ICON_FILE}</string>
+            <key>CFBundleIdentifier</key><string>${MACOSX_BUNDLE_GUI_IDENTIFIER}</string>
+            <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+            <key>CFBundleName</key><string>${MACOSX_BUNDLE_BUNDLE_NAME}</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>${MACOSX_BUNDLE_SHORT_VERSION_STRING}</string>
+            <key>CFBundleVersion</key><string>${MACOSX_BUNDLE_BUNDLE_VERSION}</string>
+            <key>LSMinimumSystemVersion</key><string>13.3</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          PLIST
+          fi
+          if [ ! -f assets/logo.icns ]; then
+            mkdir -p logo.iconset
+            for s in 16 32 128 256 512; do
+              sips -z $s $s assets/logo.png --out logo.iconset/icon_${s}x${s}.png >/dev/null
+              d=$((s*2))
+              sips -z $d $d assets/logo.png --out logo.iconset/icon_${s}x${s}@2x.png >/dev/null
+            done
+            iconutil -c icns logo.iconset -o assets/logo.icns || true
+          fi
+          ls -la assets
 
       - name: Cau hinh
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3 -S .
+        run: >
+          cmake -B build -S .
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_OSX_ARCHITECTURES=arm64
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3
+          -DVECGUI_VULKAN=OFF
+          -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 
       - name: Build
         run: cmake --build build --config Release -j"$(sysctl -n hw.ncpu)"
@@ -83,7 +128,8 @@ jobs:
           cp -R "$APP" package/
           APP=package/aviateur.app
           ls -la "$APP/Contents/MacOS" "$APP/Contents/Resources" || true
-          mkdir -p "$APP/Contents/Frameworks"
+          mkdir -p "$APP/Contents/Frameworks" "$APP/Contents/Resources"
+          cp assets/logo.icns "$APP/Contents/Resources/" 2>/dev/null || true
           dylibbundler -od -b -of \
             -x "$APP/Contents/MacOS/aviateur" \
             -d "$APP/Contents/Frameworks" \
